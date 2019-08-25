@@ -1,0 +1,19 @@
+type: lib
+description: Implements LTC68xx1 SPI communication
+author: ImpruvIT
+version: 0.1
+
+sources:
+  - src
+includes:
+  - include
+
+config_schema:
+
+libs:
+
+tags:
+  - c
+  - LTC68xx-1
+
+manifest_version: 2018-06-20
