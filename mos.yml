@@ -1,5 +1,5 @@
 type: lib
-description: Implements LTC68xx1 SPI communication
+description: Implements LTC68xx-1 SPI communication
 author: ImpruvIT
 version: 0.1
 

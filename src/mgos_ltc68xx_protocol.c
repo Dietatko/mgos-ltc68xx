@@ -20,7 +20,7 @@ struct mgos_ltc68xx1* mgos_ltc68xx1_create(struct mgos_spi* spi, struct mgos_spi
    
    struct mgos_ltc68xx1* handle = (struct mgos_ltc68xx1*)calloc(1, sizeof(*handle));
    handle->spi = spi;
-
+   
    struct mgos_spi_txn* txn = (struct mgos_spi_txn*)calloc(1, sizeof(*txn));
    txn->cs = txn_config->cs;
    txn->mode = txn_config->mode;
@@ -28,8 +28,19 @@ struct mgos_ltc68xx1* mgos_ltc68xx1_create(struct mgos_spi* spi, struct mgos_spi
    handle->txn = txn;
 
    handle->chainLength = 0;
+   handle->adcMode = LTC68XX_ADC_MODE(LTC68XX_ADC_OPTION_FAST, LTC68XX_ADC_MODE_NORMAL);
 
    return handle;
+}
+
+struct mgos_spi_txn_config* mgos_ltc68xx1_create_txn_config(int cs, int mode, int freq)
+{
+  struct mgos_spi_txn_config* txn = calloc(sizeof(*txn), 1);
+  txn->cs = cs;
+  txn->mode = mode;
+  txn->freq = freq;
+
+  return txn;
 }
 
 void mgos_ltc68xx1_close(struct mgos_ltc68xx1* handle)
@@ -58,7 +69,7 @@ bool mgos_ltc68xx1_exec_cmd(struct mgos_ltc68xx1* handle, uint16_t command)
    if (handle == NULL)
       return false;
 
-   unsigned int data_len = 4 * handle->chainLength;
+   int data_len = 4 * handle->chainLength;
    // Prepare data for one chip
    uint8_t tx_data[data_len];
    tx_data[0] = (uint8_t)(command >> 8);
@@ -66,7 +77,7 @@ bool mgos_ltc68xx1_exec_cmd(struct mgos_ltc68xx1* handle, uint16_t command)
    add_pec(tx_data, 2);
 
    // Multiply data for all chips
-   for (unsigned int i = 1; i < handle->chainLength; i++)
+   for (int i = 1; i < handle->chainLength; i++)
       memcpy(&tx_data[4 * i], tx_data, 4);
    
    handle->txn->hd.tx_data = tx_data;
@@ -103,8 +114,8 @@ bool mgos_ltc68xx1_write_reg_same(struct mgos_ltc68xx1* handle, uint16_t command
    if (handle == NULL || registerData == NULL)
       return false;
 
-   unsigned int chunkLength = dataLength + 2;
-   unsigned int totalLength = 4 + handle->chainLength * chunkLength;
+   int chunkLength = dataLength + 2;
+   int totalLength = 4 + handle->chainLength * chunkLength;
    uint8_t* buffer = (uint8_t*)calloc(totalLength, sizeof(uint8_t));
    
    // Prepare command
@@ -144,7 +155,7 @@ bool mgos_ltc68xx1_write_reg_diff(struct mgos_ltc68xx1* handle, uint16_t command
 
    // Calculate PEC for each chunk
    uint8_t* bufferPtr = buffer + 4;
-   for(unsigned int i = handle->chainLength; i > 0; i--)
+   for(int i = handle->chainLength; i > 0; i--)
    {
       add_pec(bufferPtr, data->dataLength);
       bufferPtr += (data->dataLength + 2);
