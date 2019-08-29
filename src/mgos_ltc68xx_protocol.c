@@ -4,8 +4,8 @@
 #include "crc15.h"
 #include "mgos_ltc68xx.h"
 
-void add_pec(uint8_t* buffer, size_t byteCount);
-bool write_data(struct mgos_ltc68xx1* handle, void* buffer, size_t length);
+void add_pec(uint8_t *buffer, size_t byteCount);
+bool write_data(struct mgos_ltc68xx1 *handle, void *buffer, size_t length);
 
 bool mgos_ltc68xx_init(void)
 {
@@ -13,15 +13,15 @@ bool mgos_ltc68xx_init(void)
    return true;
 }
 
-struct mgos_ltc68xx1* mgos_ltc68xx1_create(struct mgos_spi* spi, struct mgos_spi_txn_config* txn_config)
+struct mgos_ltc68xx1 *mgos_ltc68xx1_create(struct mgos_spi *spi, struct mgos_spi_txn_config *txn_config)
 {
    if (spi == NULL || txn_config == NULL)
       return NULL;
    
-   struct mgos_ltc68xx1* handle = (struct mgos_ltc68xx1*)calloc(1, sizeof(*handle));
+   struct mgos_ltc68xx1 *handle = (struct mgos_ltc68xx1*)calloc(1, sizeof(*handle));
    handle->spi = spi;
    
-   struct mgos_spi_txn* txn = (struct mgos_spi_txn*)calloc(1, sizeof(*txn));
+   struct mgos_spi_txn *txn = (struct mgos_spi_txn*)calloc(1, sizeof(*txn));
    txn->cs = txn_config->cs;
    txn->mode = txn_config->mode;
    txn->freq = txn_config->freq;
@@ -33,9 +33,9 @@ struct mgos_ltc68xx1* mgos_ltc68xx1_create(struct mgos_spi* spi, struct mgos_spi
    return handle;
 }
 
-struct mgos_spi_txn_config* mgos_ltc68xx1_create_txn_config(int cs, int mode, int freq)
+struct mgos_spi_txn_config *mgos_ltc68xx1_create_txn_config(int cs, int mode, int freq)
 {
-  struct mgos_spi_txn_config* txn = calloc(sizeof(*txn), 1);
+  struct mgos_spi_txn_config *txn = calloc(1, sizeof(*txn));
   txn->cs = cs;
   txn->mode = mode;
   txn->freq = freq;
@@ -43,7 +43,7 @@ struct mgos_spi_txn_config* mgos_ltc68xx1_create_txn_config(int cs, int mode, in
   return txn;
 }
 
-void mgos_ltc68xx1_close(struct mgos_ltc68xx1* handle)
+void mgos_ltc68xx1_close(struct mgos_ltc68xx1 *handle)
 {
    free(handle);
 }
