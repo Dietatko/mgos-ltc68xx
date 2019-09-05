@@ -9,11 +9,16 @@
 
 #define LAMBDA(c_) ({ c_ _;})
 
+// N/A, 27 kHz (Fast), 7 kHz (Normal), 26 Hz (Filtered), N/A, 14 kHz, 3 kHz, 2kHz
 uint32_t adc_time_single[] = {
    0, 201, 405, 33568, 0, 230, 521, 754
 };
 
-uint32_t adc_time_multi[] = {
+uint32_t adc_time_multi4[] = {
+   0, 748, 1563, 134218, 0, 865, 2028, 2959
+};
+
+uint32_t adc_time_multi6[] = {
    0, 1113, 2335, 201317, 0, 1288, 3033, 4430
 };
 
@@ -90,7 +95,7 @@ bool read_update_write_reg(
       return false;
 
    updateFunc(handle, data);
-
+   
    return mgos_ltc68xx1_write_reg_diff(handle, writeReg, data);
 }
 
@@ -101,18 +106,17 @@ bool read_update_write_config_reg(struct mgos_ltc68xx1 *handle, struct mgos_ltc6
 
 bool setup_config_reg(struct mgos_ltc68xx1 *handle, struct mgos_ltc68xx_data *data)
 {
+   //LOG(LL_INFO, ("setup_config_reg"));
    return read_update_write_config_reg(handle, data,
       LAMBDA(void _(struct mgos_ltc68xx1 *h, struct mgos_ltc68xx_data *d) {
          for (int i = d->chainLength - 1; i >= 0; i--)
          {
             uint8_t *chipData = mgos_ltc68xx_get_chip_data(d, i);
-
-            // Start reference
-            SET_BIT(chipData[0], 2);
-
-            // Set ADC Mode option
-            CLEAR_BIT(chipData[0], 0);
+            chipData[0] = (0x1F << BIT_GPIO1) | (1 << BIT_REFON);
             chipData[0] |= GET_ADC_OPTION(h->adcMode);
+
+            chipData[4] = 0;
+            chipData[5] = 0;
          }
       }));
 }
@@ -124,22 +128,56 @@ bool clean_config_reg(struct mgos_ltc68xx1 *handle, struct mgos_ltc68xx_data *da
          for (int i = d->chainLength - 1; i >= 0; i--)
          {
             uint8_t *chipData = mgos_ltc68xx_get_chip_data(d, i);
+            chipData[0] |= (0x1F << BIT_GPIO1);
             CLEAR_BIT(chipData[0], 2);    // Stop reference
+
+            chipData[4] = 0;
+            chipData[5] = 0;
          }
       }));
 }
 
 bool measure_cell_voltages(struct mgos_ltc68xx1 *handle, uint16_t cells)
 {
+   //LOG(LL_INFO, ("measure_cell_voltages"));
    if (cells == 0)
       return true;
    
-   uint8_t adcMode = handle->adcMode;
-   uint8_t cmd = START_CELL_CONVERSION(GET_ADC_MODE(adcMode), false, 0x0);
-   bool result = mgos_ltc68xx1_exec_cmd(handle, cmd);
+   int convCount = 0;
+   uint16_t mask = 0x41;
+   for (size_t i = 0; i < 6; i++)
+   {
+      if ((cells & mask) != 0)
+         convCount++;
+      mask <<= 1;
+   }
 
-   if (result)
-      mgos_usleep(adc_time_multi[adcMode]);
+   uint8_t adcMode = handle->adcMode;
+   bool result = false;
+   if (convCount > 5)
+   {
+      uint16_t cmd = START_CELL_CONVERSION(GET_ADC_MODE(adcMode), false, 0x00);
+      result = mgos_ltc68xx1_exec_cmd(handle, cmd);
+
+      if (result)
+         mgos_usleep(adc_time_multi6[adcMode]);
+   }
+   else
+   {
+      uint16_t mask = 0x41;
+      for (size_t i = 1; i <= 6; i++, mask <<= 1)
+      {
+         if ((cells & mask) == 0)
+            continue;
+         
+         uint16_t cmd = START_CELL_CONVERSION(GET_ADC_MODE(adcMode), false, i);
+         result = mgos_ltc68xx1_exec_cmd(handle, cmd);
+         if (!result)
+            break;
+         
+         mgos_usleep(adc_time_single[adcMode]);
+      }
+   }
 
    return result;
 }
@@ -148,13 +186,36 @@ bool measure_aux_voltages(struct mgos_ltc68xx1 *handle, uint8_t aux)
 {
    if (aux == 0)
       return true;
+
+   mgos_usleep(100);
    
    uint8_t adcMode = handle->adcMode;
-   uint8_t cmd = START_AUX_CONVERSION(GET_ADC_MODE(adcMode), 0x0);
-   bool result = mgos_ltc68xx1_exec_cmd(handle, cmd);
+   bool result = false;
+   if ((aux & 0x3F) == 0x3F)
+   {
+      uint16_t cmd = START_AUX_CONVERSION(GET_ADC_MODE(adcMode), 0x00);
+      //uint16_t cmd = START_AUX_SELF_TEST(GET_ADC_MODE(adcMode), 0x01);
+      result = mgos_ltc68xx1_exec_cmd(handle, cmd);
 
-   if (result)
-      mgos_usleep(adc_time_multi[adcMode]);
+      if (result)
+         mgos_usleep(adc_time_multi6[adcMode] + 100);
+   }
+   else
+   {
+      uint16_t mask = 0x01;
+      for (size_t i = 1; i <= 6; i++, mask <<= 1)
+      {
+         if ((aux & mask) == 0)
+            continue;
+         
+         uint16_t cmd = START_AUX_CONVERSION(GET_ADC_MODE(adcMode), i);
+         result = mgos_ltc68xx1_exec_cmd(handle, cmd);
+         if (!result)
+            break;
+         
+         mgos_usleep(adc_time_single[adcMode]);
+      }
+   }
 
    return result;
 }
@@ -163,13 +224,33 @@ bool measure_system_voltages(struct mgos_ltc68xx1 *handle, uint8_t system)
 {
    if (system == 0)
       return true;
-   
+      
    uint8_t adcMode = handle->adcMode;
-   uint8_t cmd = START_STATUS_CONVERSION(GET_ADC_MODE(adcMode), 0x0);
-   bool result = mgos_ltc68xx1_exec_cmd(handle, cmd);
+   bool result = false;
+   if ((system & 0x0F) == 0x0F)
+   {
+      uint16_t cmd = START_STATUS_CONVERSION(GET_ADC_MODE(adcMode), 0x00);
+      result = mgos_ltc68xx1_exec_cmd(handle, cmd);
 
-   if (result)
-      mgos_usleep(adc_time_multi[adcMode]);
+      if (result)
+         mgos_usleep(adc_time_multi4[adcMode]);
+   }
+   else
+   {
+      uint16_t mask = 0x01;
+      for (size_t i = 1; i <= 4; i++, mask <<= 1)
+      {
+         if ((system & mask) == 0)
+            continue;
+         
+         uint16_t cmd = START_STATUS_CONVERSION(GET_ADC_MODE(adcMode), i);
+         result = mgos_ltc68xx1_exec_cmd(handle, cmd);
+         if (!result)
+            break;
+         
+         mgos_usleep(adc_time_single[adcMode]);
+      }
+   }
 
    return result;
 }
@@ -180,7 +261,7 @@ bool read_cell_voltages(struct mgos_ltc68xx1 *handle, struct mgos_ltc68xx_data *
       return true;
    
    uint16_t valueMask = 0x07;
-   for (int reg = 0; reg < 4; reg++)
+   for (int reg = 0; reg < 4; reg++, valueMask <<= 3)
    {
       if ((cells & valueMask) == 0)
          continue;
@@ -191,14 +272,12 @@ bool read_cell_voltages(struct mgos_ltc68xx1 *handle, struct mgos_ltc68xx_data *
 
       for (int i = 0; i < data->chainLength; i++)
       {
-         int cell = reg  *3;
+         int cell = reg * 3;
          uint8_t *chipData = mgos_ltc68xx_get_chip_data(data, i);
          results[i].cells[cell++] = (chipData[1] << 8) | chipData[0];
          results[i].cells[cell++] = (chipData[3] << 8) | chipData[2];
          results[i].cells[cell++] = (chipData[5] << 8) | chipData[4];
       }
-
-      valueMask <<= 3;
    }
    
    return true;
@@ -210,7 +289,7 @@ bool read_aux_voltages(struct mgos_ltc68xx1 *handle, struct mgos_ltc68xx_data *d
       return true;
    
    uint16_t valueMask = 0x07;
-   for (int reg = 0; reg < 2; reg++)
+   for (int reg = 0; reg < 2; reg++, valueMask <<= 3)
    {
       if ((aux & valueMask) == 0)
          continue;
@@ -235,8 +314,6 @@ bool read_aux_voltages(struct mgos_ltc68xx1 *handle, struct mgos_ltc68xx_data *d
             results[i].internalRef2 = (chipData[5] << 8) | chipData[4];
          }
       }
-
-      valueMask <<= 3;
    }
    
    return true;
@@ -248,7 +325,7 @@ bool read_system_voltages(struct mgos_ltc68xx1 *handle, struct mgos_ltc68xx_data
       return true;
    
    uint16_t valueMask = 0x07;
-   for (int reg = 0; reg < 2; reg++)
+   for (int reg = 0; reg < 2; reg++, valueMask <<= 3)
    {
       if ((system & valueMask) == 0)
          continue;
@@ -263,7 +340,7 @@ bool read_system_voltages(struct mgos_ltc68xx1 *handle, struct mgos_ltc68xx_data
          if (reg == 0)
          {
             results[i].sumOfCells =    (chipData[1] << 8) | chipData[0];
-            results[i].internalTemp =  (chipData[3] << 8) | chipData[2];
+            results[i].dieTemp =       (chipData[3] << 8) | chipData[2];
             results[i].analogSupply =  (chipData[5] << 8) | chipData[4];
          }
          else
@@ -271,33 +348,36 @@ bool read_system_voltages(struct mgos_ltc68xx1 *handle, struct mgos_ltc68xx_data
             results[i].digitalSupply = (chipData[1] << 8) | chipData[0];
          }
       }
-
-      valueMask <<= 3;
    }
    
    return true;
 }
 
+bool mgos_ltc68xx1_diagnose(struct mgos_ltc68xx1 *handle)
+{
+   bool result = mgos_ltc68xx1_exec_cmd(handle, DIAGNOSE_MUX);
+   if (result)
+      mgos_usleep(450);
+
+   return result;
+}
+
 struct mgos_ltc68xx1_measure_result *mgos_ltc68xx1_measure(struct mgos_ltc68xx1 *handle, uint16_t cells, uint8_t aux, uint8_t system)
 {
+   if (!mgos_ltc68xx1_wake_up(handle))
+      return NULL;
+
+   struct mgos_ltc68xx1_measure_result *results = (struct mgos_ltc68xx1_measure_result*)calloc(handle->chainLength, sizeof(struct mgos_ltc68xx1_measure_result));
    struct mgos_ltc68xx_data *data = mgos_ltc68xx_create_data(handle->chainLength, 6);
 
    if (!setup_config_reg(handle, data) ||
       !measure_cell_voltages(handle, cells) ||
+      !read_cell_voltages(handle, data, results, cells) ||
       !measure_aux_voltages(handle, aux) ||
-      !measure_system_voltages(handle, system) ||
-      !clean_config_reg(handle, data))
-   {
-      free(data);
-      return NULL;
-   }
-
-   // Read results
-   struct mgos_ltc68xx1_measure_result *results = (struct mgos_ltc68xx1_measure_result*)calloc(handle->chainLength, sizeof(struct mgos_ltc68xx1_measure_result));
-
-   if (!read_cell_voltages(handle, data, results, cells) ||
       !read_aux_voltages(handle, data, results, aux) ||
-      !read_system_voltages(handle, data, results, system))
+      !measure_system_voltages(handle, system) ||
+      !read_system_voltages(handle, data, results, system) ||
+      !clean_config_reg(handle, data))
    {
       free(results);
       results = NULL;

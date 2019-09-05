@@ -34,7 +34,7 @@ struct mgos_ltc68xx1_measure_result
     uint16_t gpios[5];
     uint16_t internalRef2;
     uint16_t sumOfCells;
-    uint16_t internalTemp;
+    uint16_t dieTemp;
     uint16_t analogSupply;
     uint16_t digitalSupply;
 };
@@ -52,6 +52,7 @@ int mgos_ltc68xx1_determine_length(struct mgos_ltc68xx1 *handle);
 bool mgos_ltc68xx1_start_ref(struct mgos_ltc68xx1 *handle);
 bool mgos_ltc68xx1_stop_ref(struct mgos_ltc68xx1 *handle);
 
+bool mgos_ltc68xx1_diagnose(struct mgos_ltc68xx1 *handle);
 struct mgos_ltc68xx1_measure_result *mgos_ltc68xx1_measure(struct mgos_ltc68xx1 *handle, uint16_t cells, uint8_t aux, uint8_t system);
 /*
 bool mgos_ltc68xx1_start_cell_conversion(struct mgos_ltc68xx1 *handle, ConversionMode mode, bool dischargePermitted, int cellIndex);

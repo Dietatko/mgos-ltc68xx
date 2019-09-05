@@ -4,16 +4,21 @@ author: ImpruvIT
 version: 0.1
 
 sources:
-  - src
+- src
 includes:
-  - include
+- include
 
 config_schema:
+- ["ltc68xx.connection", "o", { title: "The SPI connection settings." }]
+- ["ltc68xx.connection.cs_pin", "i", 0, { title: "The SPI chip select pin." }]
+- ["ltc68xx.connection.mode", "i", 0, { title: "The SPI mode." }]
+- ["ltc68xx.connection.frequency", "i", 100000, { title: "The SPI bus frequency." }]
 
 libs:
-
+- origin: https://github.com/mongoose-os-libs/spi
+  
 tags:
-  - c
-  - LTC68xx-1
+- c
+- LTC68xx-1
 
 manifest_version: 2018-06-20

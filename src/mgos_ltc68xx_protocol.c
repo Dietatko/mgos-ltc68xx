@@ -4,8 +4,9 @@
 #include "crc15.h"
 #include "mgos_ltc68xx.h"
 
-void add_pec(uint8_t *buffer, size_t byteCount);
 bool write_data(struct mgos_ltc68xx1 *handle, void *buffer, size_t length);
+void add_pec(uint8_t *buffer, size_t byteCount);
+bool validate_pec(uint8_t *buffer, size_t byteCount);
 
 bool mgos_ltc68xx_init(void)
 {
@@ -18,10 +19,10 @@ struct mgos_ltc68xx1 *mgos_ltc68xx1_create(struct mgos_spi *spi, struct mgos_spi
    if (spi == NULL || txn_config == NULL)
       return NULL;
    
-   struct mgos_ltc68xx1 *handle = (struct mgos_ltc68xx1*)calloc(1, sizeof(*handle));
+   struct mgos_ltc68xx1 *handle = (struct mgos_ltc68xx1*)malloc(sizeof(*handle));
    handle->spi = spi;
    
-   struct mgos_spi_txn *txn = (struct mgos_spi_txn*)calloc(1, sizeof(*txn));
+   struct mgos_spi_txn *txn = (struct mgos_spi_txn*)malloc(sizeof(*txn));
    txn->cs = txn_config->cs;
    txn->mode = txn_config->mode;
    txn->freq = txn_config->freq;
@@ -35,7 +36,7 @@ struct mgos_ltc68xx1 *mgos_ltc68xx1_create(struct mgos_spi *spi, struct mgos_spi
 
 struct mgos_spi_txn_config *mgos_ltc68xx1_create_txn_config(int cs, int mode, int freq)
 {
-  struct mgos_spi_txn_config *txn = calloc(1, sizeof(*txn));
+  struct mgos_spi_txn_config *txn = malloc(sizeof(*txn));
   txn->cs = cs;
   txn->mode = mode;
   txn->freq = freq;
@@ -48,7 +49,7 @@ void mgos_ltc68xx1_close(struct mgos_ltc68xx1 *handle)
    free(handle);
 }
 
-bool mgos_ltc68xx1_wake_up(struct mgos_ltc68xx1* handle)
+bool mgos_ltc68xx1_wake_up(struct mgos_ltc68xx1 *handle)
 {
    if (handle == NULL)
       return false;
@@ -64,7 +65,7 @@ bool mgos_ltc68xx1_wake_up(struct mgos_ltc68xx1* handle)
    return mgos_spi_run_txn(handle->spi, false, handle->txn);
 }
 
-bool mgos_ltc68xx1_exec_cmd(struct mgos_ltc68xx1* handle, uint16_t command)
+bool mgos_ltc68xx1_exec_cmd(struct mgos_ltc68xx1 *handle, uint16_t command)
 {
    if (handle == NULL)
       return false;
@@ -89,12 +90,14 @@ bool mgos_ltc68xx1_exec_cmd(struct mgos_ltc68xx1* handle, uint16_t command)
    return mgos_spi_run_txn(handle->spi, false, handle->txn);
 }
 
-bool mgos_ltc68xx1_read_reg(struct mgos_ltc68xx1* handle, uint16_t command, struct mgos_ltc68xx_data* data)
+bool mgos_ltc68xx1_read_reg(struct mgos_ltc68xx1 *handle, uint16_t command, struct mgos_ltc68xx_data *data)
 {
    if (handle == NULL || data == NULL || data->chainLength < handle->chainLength)
       return false;
 
-   uint8_t* buffer = data->buffer;
+   uint8_t *buffer = data->buffer;
+   uint8_t *readBuffer = &(buffer[4]);
+   size_t chipDataLength = data->dataLength + 2;
 
    buffer[0] = (uint8_t)(command >> 8);
    buffer[1] = (uint8_t)command;
@@ -103,20 +106,31 @@ bool mgos_ltc68xx1_read_reg(struct mgos_ltc68xx1* handle, uint16_t command, stru
    handle->txn->hd.tx_data = buffer;
    handle->txn->hd.tx_len = 4;
    handle->txn->hd.dummy_len = 0;
-   handle->txn->hd.rx_data = buffer + 4;
-   handle->txn->hd.rx_len = handle->chainLength * (data->dataLength + 2);
+   handle->txn->hd.rx_data = readBuffer;
+   handle->txn->hd.rx_len = handle->chainLength * chipDataLength;
 
-   return mgos_spi_run_txn(handle->spi, false, handle->txn);
+   if (!mgos_spi_run_txn(handle->spi, false, handle->txn))
+      return false;
+   
+   for (size_t i = handle->chainLength; i > 0; i--)
+   {
+      if (!validate_pec(readBuffer, data->dataLength))
+         return false;
+      
+      readBuffer = &(readBuffer[chipDataLength]);
+   }
+
+   return true;
 }
 
-bool mgos_ltc68xx1_write_reg_same(struct mgos_ltc68xx1* handle, uint16_t command, uint8_t* registerData, size_t dataLength)
+bool mgos_ltc68xx1_write_reg_same(struct mgos_ltc68xx1 *handle, uint16_t command, uint8_t *registerData, size_t dataLength)
 {
    if (handle == NULL || registerData == NULL)
       return false;
 
-   int chunkLength = dataLength + 2;
-   int totalLength = 4 + handle->chainLength * chunkLength;
-   uint8_t* buffer = (uint8_t*)calloc(totalLength, sizeof(uint8_t));
+   int chipDataLength = dataLength + 2;
+   int totalLength = 4 + handle->chainLength * chipDataLength;
+   uint8_t *buffer = (uint8_t*)calloc(totalLength, sizeof(uint8_t));
    
    // Prepare command
    buffer[0] = (uint8_t)(command >> 8);
@@ -124,16 +138,16 @@ bool mgos_ltc68xx1_write_reg_same(struct mgos_ltc68xx1* handle, uint16_t command
    add_pec(buffer, 2);
 
    // Prepare data for one chip
-   uint8_t* srcPointer = buffer + 4;
+   uint8_t *srcPointer = buffer + 4;
    memcpy(srcPointer, registerData, dataLength);
    add_pec(srcPointer, dataLength);
 
    // Multiply data for all chips
-   uint8_t* copyPointer = srcPointer;
+   uint8_t *copyPointer = srcPointer;
    for(int i = handle->chainLength; i > 1; i--)
    {
-      copyPointer = copyPointer + chunkLength;
-      memcpy(copyPointer, srcPointer, chunkLength);
+      copyPointer = copyPointer + chipDataLength;
+      memcpy(copyPointer, srcPointer, chipDataLength);
    }
 
    bool success = write_data(handle, buffer, totalLength);
@@ -141,12 +155,12 @@ bool mgos_ltc68xx1_write_reg_same(struct mgos_ltc68xx1* handle, uint16_t command
    return success;
 }
 
-bool mgos_ltc68xx1_write_reg_diff(struct mgos_ltc68xx1* handle, uint16_t command, struct mgos_ltc68xx_data* data)
+bool mgos_ltc68xx1_write_reg_diff(struct mgos_ltc68xx1 *handle, uint16_t command, struct mgos_ltc68xx_data *data)
 {
    if (handle == NULL || data == NULL || data->chainLength < handle->chainLength)
       return false;
    
-   uint8_t* buffer = data->buffer;
+   uint8_t *buffer = data->buffer;
     
    // Prepare command
    buffer[0] = (uint8_t)(command >> 8);
@@ -154,7 +168,7 @@ bool mgos_ltc68xx1_write_reg_diff(struct mgos_ltc68xx1* handle, uint16_t command
    add_pec(buffer, 2);
 
    // Calculate PEC for each chunk
-   uint8_t* bufferPtr = buffer + 4;
+   uint8_t *bufferPtr = buffer + 4;
    for(int i = handle->chainLength; i > 0; i--)
    {
       add_pec(bufferPtr, data->dataLength);
@@ -164,14 +178,7 @@ bool mgos_ltc68xx1_write_reg_diff(struct mgos_ltc68xx1* handle, uint16_t command
    return write_data(handle, buffer, 4 + handle->chainLength * (data->dataLength + 2));
 }
 
-void add_pec(uint8_t* buffer, size_t byteCount)
-{
-    uint16_t pec = crc15_calculate(buffer, byteCount);
-    buffer[byteCount] = (uint8_t)(pec >> 8);
-    buffer[byteCount + 1] = (uint8_t)pec;
-}
-
-bool write_data(struct mgos_ltc68xx1* handle, void* buffer, size_t length)
+bool write_data(struct mgos_ltc68xx1 *handle, void *buffer, size_t length)
 {
    // Send data
    handle->txn->hd.tx_data = buffer;
@@ -181,4 +188,17 @@ bool write_data(struct mgos_ltc68xx1* handle, void* buffer, size_t length)
    handle->txn->hd.rx_len = 0;
 
    return mgos_spi_run_txn(handle->spi, false, handle->txn);
+}
+
+void add_pec(uint8_t *buffer, size_t byteCount)
+{
+    uint16_t pec = crc15_calculate(buffer, byteCount);
+    buffer[byteCount] = (uint8_t)(pec >> 8);
+    buffer[byteCount + 1] = (uint8_t)pec;
+}
+
+bool validate_pec(uint8_t *buffer, size_t byteCount)
+{
+    uint16_t pec = crc15_calculate(buffer, byteCount);
+    return buffer[byteCount] == (uint8_t)(pec >> 8) && buffer[byteCount + 1] == (uint8_t)pec;
 }
