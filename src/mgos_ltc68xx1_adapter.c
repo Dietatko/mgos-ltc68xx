@@ -3,8 +3,7 @@
 #include "mgos_system.h"
 
 #include "crc15.h"
-
-#include "mgos_ltc68xx.h"
+#include "mgos_ltc68xx1.h"
 #include "mgos_ltc68xx_regs_internal.h"
 
 #define LAMBDA(c_) ({ c_ _;})
@@ -389,7 +388,7 @@ bool mgos_ltc68xx1_measure(struct mgos_ltc68xx1 *handle, uint16_t cells, uint8_t
 
    struct mgos_ltc68xx_data *data = mgos_ltc68xx_create_data(results->chipCount, 6);
 
-   bool success = !setup_config_reg(handle, data) ||
+   bool failed = !setup_config_reg(handle, data) ||
       !measure_cell_voltages(handle, cells) ||
       !read_cell_voltages(handle, data, results, cells) ||
       !measure_aux_voltages(handle, aux) ||
@@ -400,5 +399,5 @@ bool mgos_ltc68xx1_measure(struct mgos_ltc68xx1 *handle, uint16_t cells, uint8_t
 
    mgos_ltc68xx_free_data(data);
 
-   return success;
+   return !failed;
 }

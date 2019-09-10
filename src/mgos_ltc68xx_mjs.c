@@ -53,7 +53,6 @@ mjs_val_t convert_chip_results_array(struct mjs *mjs, const void *field_ptr)
 
 static const struct mjs_c_struct_member mgos_ltc68xx_measure_results_descr[] = {
    {"chipCount",   offsetof(struct mgos_ltc68xx_measure_results, chipCount),   MJS_STRUCT_FIELD_TYPE_INT,    NULL},
-   //{"chipResults", offsetof(struct mgos_ltc68xx_measure_results, chipResults), MJS_STRUCT_FIELD_TYPE_STRUCT_PTR, mgos_ltc68xx_chip_results_descr},
    {"chipResults", 0,                                                          MJS_STRUCT_FIELD_TYPE_CUSTOM, convert_chip_results_array},
    {NULL, 0, MJS_STRUCT_FIELD_TYPE_INVALID, NULL},
 };

@@ -9,6 +9,13 @@ let LTC68XX = {
       return this._create_txn_config(params.cs, params.mode, params.freq);
    },
 
+   _create_txn_config: ffi("void* mgos_ltc68xx1_create_txn_config(int,int,int)"),
+   _create_results: ffi("void* mgos_ltc68xx_create_results(int)"),
+   _free_results: ffi("void mgos_ltc68xx_free_results(void*)"),
+   _results_descr: ffi("void *get_mgos_ltc68xx_measure_results_descr(void)")
+};
+
+let LTC68XX1 = {
    create: function(spi, spiConfig) {
       let handle = this._create(spi, spiConfig);
       if (handle === null) {
@@ -21,26 +28,24 @@ let LTC68XX = {
    },
 
    _prot: {
-      _handle: undefined,
-
-      chainLength: undefined,
+      chainLength: 0,
 
       close: function() {
-         LTC68XX._close(this._handle);
+         LTC68XX1._close(this._handle);
       },
 
       determineLength: function() {
-         this.chainLength = LTC68XX._determine_length(this._handle);
+         this.chainLength = LTC68XX1._determine_length(this._handle);
          return this.chainLength;
       },
 
       wakeUp: function() {
-         LTC68XX._wake_up(this._handle);
+         LTC68XX1._wake_up(this._handle);
       },
 
       measure: function(cells, aux, system) {
          let resultsPtr = LTC68XX._create_results(this.chainLength);
-         let success = LTC68XX._measure(this._handle, 
+         let success = LTC68XX1._measure(this._handle, 
             cells || 0,
             aux || 0,
             system || 0,
@@ -71,11 +76,7 @@ let LTC68XX = {
       }
    },
    
-   _create_results: ffi("void* mgos_ltc68xx_create_results(int)"),
-   _free_results: ffi("void mgos_ltc68xx_free_results(void*)"),
-
    _create: ffi("void* mgos_ltc68xx1_create(void*,void*)"),
-   _create_txn_config: ffi("void* mgos_ltc68xx1_create_txn_config(int,int,int)"),
    _close: ffi("void mgos_ltc68xx1_close(void*)"),
    _wake_up: ffi("bool mgos_ltc68xx1_wake_up(void*)"),
    _exec_cmd: ffi("bool mgos_ltc68xx1_exec_cmd(void*,int)"),
@@ -85,6 +86,4 @@ let LTC68XX = {
 
    _determine_length: ffi("int mgos_ltc68xx1_determine_length(void*)"),
    _measure: ffi("bool mgos_ltc68xx1_measure(void*,int,int,int,void*);"),
-
-   _results_descr: ffi("void *get_mgos_ltc68xx_measure_results_descr(void)")
 };

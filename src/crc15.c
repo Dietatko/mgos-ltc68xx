@@ -35,3 +35,16 @@ uint16_t crc15_calculate(uint8_t* buffer, int byteCount)
     }
     return remainder * 2;     //The CRC15 has a 0 in the LSB so the final value must be multiplied by 2
 }
+
+void add_pec(uint8_t *buffer, size_t byteCount)
+{
+    uint16_t pec = crc15_calculate(buffer, byteCount);
+    buffer[byteCount] = (uint8_t)(pec >> 8);
+    buffer[byteCount + 1] = (uint8_t)pec;
+}
+
+bool validate_pec(uint8_t *buffer, size_t byteCount)
+{
+    uint16_t pec = crc15_calculate(buffer, byteCount);
+    return buffer[byteCount] == (uint8_t)(pec >> 8) && buffer[byteCount + 1] == (uint8_t)pec;
+}

@@ -2,17 +2,9 @@
 #include "mgos_spi.h"
 
 #include "crc15.h"
-#include "mgos_ltc68xx.h"
+#include "mgos_ltc68xx1.h"
 
 bool write_data(struct mgos_ltc68xx1 *handle, void *buffer, size_t length);
-void add_pec(uint8_t *buffer, size_t byteCount);
-bool validate_pec(uint8_t *buffer, size_t byteCount);
-
-bool mgos_ltc68xx_init(void)
-{
-   crc15_init();
-   return true;
-}
 
 struct mgos_ltc68xx1 *mgos_ltc68xx1_create(struct mgos_spi *spi, struct mgos_spi_txn_config *txn_config)
 {
@@ -32,16 +24,6 @@ struct mgos_ltc68xx1 *mgos_ltc68xx1_create(struct mgos_spi *spi, struct mgos_spi
    handle->adcMode = LTC68XX_ADC_MODE(LTC68XX_ADC_OPTION_FAST, LTC68XX_ADC_MODE_NORMAL);
 
    return handle;
-}
-
-struct mgos_spi_txn_config *mgos_ltc68xx1_create_txn_config(int cs, int mode, int freq)
-{
-  struct mgos_spi_txn_config *txn = malloc(sizeof(*txn));
-  txn->cs = cs;
-  txn->mode = mode;
-  txn->freq = freq;
-
-  return txn;
 }
 
 void mgos_ltc68xx1_close(struct mgos_ltc68xx1 *handle)
@@ -196,17 +178,4 @@ bool write_data(struct mgos_ltc68xx1 *handle, void *buffer, size_t length)
    handle->txn->hd.rx_len = 0;
 
    return mgos_spi_run_txn(handle->spi, false, handle->txn);
-}
-
-void add_pec(uint8_t *buffer, size_t byteCount)
-{
-    uint16_t pec = crc15_calculate(buffer, byteCount);
-    buffer[byteCount] = (uint8_t)(pec >> 8);
-    buffer[byteCount + 1] = (uint8_t)pec;
-}
-
-bool validate_pec(uint8_t *buffer, size_t byteCount)
-{
-    uint16_t pec = crc15_calculate(buffer, byteCount);
-    return buffer[byteCount] == (uint8_t)(pec >> 8) && buffer[byteCount + 1] == (uint8_t)pec;
 }
