@@ -44,7 +44,27 @@ int mgos_ltc68xx1_determine_length(struct mgos_ltc68xx1 *handle)
    if (handle == NULL)
       return 0;
    
-   handle->chainLength = 1;
+   handle->chainLength = 16;
+
+   if (!mgos_ltc68xx1_wake_up(handle))
+   {
+      handle->chainLength = 0;
+      return 0;
+   }
+
+   struct mgos_ltc68xx_data *data = mgos_ltc68xx_create_data(16, 6);
+   mgos_ltc68xx1_read_reg(handle, READ_STATUS_REGISTER_B, data);
+   for(size_t i = 0; i < 16; i++)
+   {
+      uint8_t *chipData = mgos_ltc68xx_get_chip_data(data, i);
+      if (chipData == NULL || chipData[5] == 0xFF)
+      {
+         handle->chainLength = i;
+         break;
+      }
+   }
+   mgos_ltc68xx_free_data(data);
+
    return handle->chainLength;
 }
 
@@ -55,7 +75,7 @@ bool mgos_ltc68xx1_start_ref(struct mgos_ltc68xx1 *handle)
    if (!mgos_ltc68xx1_read_reg(handle, READ_CONFIG_REGISTER, data))
       return false;
 
-   for(int i = handle->chainLength - 1; i >= 0; i--)
+   for(size_t i = 0; i < handle->chainLength; i++)
    {
       uint8_t *chipData = mgos_ltc68xx_get_chip_data(data, i);
       SET_BIT(chipData[0], 2);
@@ -73,7 +93,7 @@ bool mgos_ltc68xx1_stop_ref(struct mgos_ltc68xx1 *handle)
    if (!mgos_ltc68xx1_read_reg(handle, READ_CONFIG_REGISTER, data))
       return false;
 
-   for(int i = handle->chainLength - 1; i >= 0; i--)
+   for(size_t i = 0; i < handle->chainLength; i++)
    {
       uint8_t *chipData = mgos_ltc68xx_get_chip_data(data, i);
       CLEAR_BIT(chipData[0], 2);
@@ -109,7 +129,7 @@ bool setup_config_reg(struct mgos_ltc68xx1 *handle, struct mgos_ltc68xx_data *da
    //LOG(LL_INFO, ("setup_config_reg"));
    return read_update_write_config_reg(handle, data,
       LAMBDA(void _(struct mgos_ltc68xx1 *h, struct mgos_ltc68xx_data *d) {
-         for (int i = d->chainLength - 1; i >= 0; i--)
+         for (size_t i = 0; i < d->chainLength; i++)
          {
             uint8_t *chipData = mgos_ltc68xx_get_chip_data(d, i);
             chipData[0] = (0x1F << BIT_GPIO1) | (1 << BIT_REFON);
@@ -125,7 +145,7 @@ bool clean_config_reg(struct mgos_ltc68xx1 *handle, struct mgos_ltc68xx_data *da
 {
    return read_update_write_config_reg(handle, data,
       LAMBDA(void _(DO_NOT_WARN_UNUSED struct mgos_ltc68xx1 *h, struct mgos_ltc68xx_data *d) {
-         for (int i = d->chainLength - 1; i >= 0; i--)
+         for (size_t i = 0; i < d->chainLength; i++)
          {
             uint8_t *chipData = mgos_ltc68xx_get_chip_data(d, i);
             chipData[0] |= (0x1F << BIT_GPIO1);
@@ -255,7 +275,7 @@ bool measure_system_voltages(struct mgos_ltc68xx1 *handle, uint8_t system)
    return result;
 }
 
-bool read_cell_voltages(struct mgos_ltc68xx1 *handle, struct mgos_ltc68xx_data *data, struct mgos_ltc68xx1_measure_result *results, uint16_t cells)
+bool read_cell_voltages(struct mgos_ltc68xx1 *handle, struct mgos_ltc68xx_data *data, struct mgos_ltc68xx_measure_results *results, uint16_t cells)
 {
    if (cells == 0)
       return true;
@@ -270,20 +290,20 @@ bool read_cell_voltages(struct mgos_ltc68xx1 *handle, struct mgos_ltc68xx_data *
       if (!result)
          return false;
 
-      for (int i = 0; i < data->chainLength; i++)
+      for (size_t i = 0; i < results->chipCount; i++)
       {
          int cell = reg * 3;
          uint8_t *chipData = mgos_ltc68xx_get_chip_data(data, i);
-         results[i].cells[cell++] = (chipData[1] << 8) | chipData[0];
-         results[i].cells[cell++] = (chipData[3] << 8) | chipData[2];
-         results[i].cells[cell++] = (chipData[5] << 8) | chipData[4];
+         results->chipResults[i].cells[cell++] = (chipData[1] << 8) | chipData[0];
+         results->chipResults[i].cells[cell++] = (chipData[3] << 8) | chipData[2];
+         results->chipResults[i].cells[cell++] = (chipData[5] << 8) | chipData[4];
       }
    }
    
    return true;
 }
 
-bool read_aux_voltages(struct mgos_ltc68xx1 *handle, struct mgos_ltc68xx_data *data, struct mgos_ltc68xx1_measure_result *results, uint16_t aux)
+bool read_aux_voltages(struct mgos_ltc68xx1 *handle, struct mgos_ltc68xx_data *data, struct mgos_ltc68xx_measure_results *results, uint16_t aux)
 {
    if (aux == 0)
       return true;
@@ -298,20 +318,20 @@ bool read_aux_voltages(struct mgos_ltc68xx1 *handle, struct mgos_ltc68xx_data *d
       if (!result)
          return false;
 
-      for (int i = 0; i < data->chainLength; i++)
+      for (size_t i = 0; i < results->chipCount; i++)
       {
          uint8_t *chipData = mgos_ltc68xx_get_chip_data(data, i);
          if (reg == 0)
          {
-            results[i].gpios[0] = (chipData[1] << 8) | chipData[0];
-            results[i].gpios[1] = (chipData[3] << 8) | chipData[2];
-            results[i].gpios[2] = (chipData[5] << 8) | chipData[4];
+            results->chipResults[i].gpios[0] = (chipData[1] << 8) | chipData[0];
+            results->chipResults[i].gpios[1] = (chipData[3] << 8) | chipData[2];
+            results->chipResults[i].gpios[2] = (chipData[5] << 8) | chipData[4];
          }
          else
          {
-            results[i].gpios[3] =     (chipData[1] << 8) | chipData[0];
-            results[i].gpios[4] =     (chipData[3] << 8) | chipData[2];
-            results[i].internalRef2 = (chipData[5] << 8) | chipData[4];
+            results->chipResults[i].gpios[3] =     (chipData[1] << 8) | chipData[0];
+            results->chipResults[i].gpios[4] =     (chipData[3] << 8) | chipData[2];
+            results->chipResults[i].internalRef2 = (chipData[5] << 8) | chipData[4];
          }
       }
    }
@@ -319,7 +339,7 @@ bool read_aux_voltages(struct mgos_ltc68xx1 *handle, struct mgos_ltc68xx_data *d
    return true;
 }
 
-bool read_system_voltages(struct mgos_ltc68xx1 *handle, struct mgos_ltc68xx_data *data, struct mgos_ltc68xx1_measure_result *results, uint16_t system)
+bool read_system_voltages(struct mgos_ltc68xx1 *handle, struct mgos_ltc68xx_data *data, struct mgos_ltc68xx_measure_results *results, uint16_t system)
 {
    if (system == 0)
       return true;
@@ -334,18 +354,18 @@ bool read_system_voltages(struct mgos_ltc68xx1 *handle, struct mgos_ltc68xx_data
       if (!result)
          return false;
 
-      for (int i = 0; i < data->chainLength; i++)
+      for (size_t i = 0; i < results->chipCount; i++)
       {
          uint8_t *chipData = mgos_ltc68xx_get_chip_data(data, i);
          if (reg == 0)
          {
-            results[i].sumOfCells =    (chipData[1] << 8) | chipData[0];
-            results[i].dieTemp =       (chipData[3] << 8) | chipData[2];
-            results[i].analogSupply =  (chipData[5] << 8) | chipData[4];
+            results->chipResults[i].sumOfCells =    (chipData[1] << 8) | chipData[0];
+            results->chipResults[i].dieTemp =       (chipData[3] << 8) | chipData[2];
+            results->chipResults[i].analogSupply =  (chipData[5] << 8) | chipData[4];
          }
          else
          {
-            results[i].digitalSupply = (chipData[1] << 8) | chipData[0];
+            results->chipResults[i].digitalSupply = (chipData[1] << 8) | chipData[0];
          }
       }
    }
@@ -362,27 +382,23 @@ bool mgos_ltc68xx1_diagnose(struct mgos_ltc68xx1 *handle)
    return result;
 }
 
-struct mgos_ltc68xx1_measure_result *mgos_ltc68xx1_measure(struct mgos_ltc68xx1 *handle, uint16_t cells, uint8_t aux, uint8_t system)
+bool mgos_ltc68xx1_measure(struct mgos_ltc68xx1 *handle, uint16_t cells, uint8_t aux, uint8_t system, struct mgos_ltc68xx_measure_results *results)
 {
    if (!mgos_ltc68xx1_wake_up(handle))
       return NULL;
 
-   struct mgos_ltc68xx1_measure_result *results = (struct mgos_ltc68xx1_measure_result*)calloc(handle->chainLength, sizeof(struct mgos_ltc68xx1_measure_result));
-   struct mgos_ltc68xx_data *data = mgos_ltc68xx_create_data(handle->chainLength, 6);
+   struct mgos_ltc68xx_data *data = mgos_ltc68xx_create_data(results->chipCount, 6);
 
-   if (!setup_config_reg(handle, data) ||
+   bool success = !setup_config_reg(handle, data) ||
       !measure_cell_voltages(handle, cells) ||
       !read_cell_voltages(handle, data, results, cells) ||
       !measure_aux_voltages(handle, aux) ||
       !read_aux_voltages(handle, data, results, aux) ||
       !measure_system_voltages(handle, system) ||
       !read_system_voltages(handle, data, results, system) ||
-      !clean_config_reg(handle, data))
-   {
-      free(results);
-      results = NULL;
-   }
+      !clean_config_reg(handle, data);
 
-   free(data);
-   return results;
+   mgos_ltc68xx_free_data(data);
+
+   return success;
 }

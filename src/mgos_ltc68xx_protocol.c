@@ -70,7 +70,7 @@ bool mgos_ltc68xx1_exec_cmd(struct mgos_ltc68xx1 *handle, uint16_t command)
    if (handle == NULL)
       return false;
 
-   int data_len = 4 * handle->chainLength;
+   size_t data_len = 4 * handle->chainLength;
    // Prepare data for one chip
    uint8_t tx_data[data_len];
    tx_data[0] = (uint8_t)(command >> 8);
@@ -78,7 +78,7 @@ bool mgos_ltc68xx1_exec_cmd(struct mgos_ltc68xx1 *handle, uint16_t command)
    add_pec(tx_data, 2);
 
    // Multiply data for all chips
-   for (int i = 1; i < handle->chainLength; i++)
+   for (size_t i = 1; i < handle->chainLength; i++)
       memcpy(&tx_data[4 * i], tx_data, 4);
    
    handle->txn->hd.tx_data = tx_data;
@@ -92,7 +92,11 @@ bool mgos_ltc68xx1_exec_cmd(struct mgos_ltc68xx1 *handle, uint16_t command)
 
 bool mgos_ltc68xx1_read_reg(struct mgos_ltc68xx1 *handle, uint16_t command, struct mgos_ltc68xx_data *data)
 {
-   if (handle == NULL || data == NULL || data->chainLength < handle->chainLength)
+   if (handle == NULL || data == NULL)
+      return false;
+
+   size_t chainLength = (data->chainLength < handle->chainLength ? data->chainLength : handle->chainLength);
+   if (chainLength <= 0)
       return false;
 
    uint8_t *buffer = data->buffer;
@@ -107,12 +111,12 @@ bool mgos_ltc68xx1_read_reg(struct mgos_ltc68xx1 *handle, uint16_t command, stru
    handle->txn->hd.tx_len = 4;
    handle->txn->hd.dummy_len = 0;
    handle->txn->hd.rx_data = readBuffer;
-   handle->txn->hd.rx_len = handle->chainLength * chipDataLength;
+   handle->txn->hd.rx_len = chainLength * chipDataLength;
 
    if (!mgos_spi_run_txn(handle->spi, false, handle->txn))
       return false;
    
-   for (size_t i = handle->chainLength; i > 0; i--)
+   for (size_t i = chainLength; i > 0; i--)
    {
       if (!validate_pec(readBuffer, data->dataLength))
          return false;
@@ -128,8 +132,8 @@ bool mgos_ltc68xx1_write_reg_same(struct mgos_ltc68xx1 *handle, uint16_t command
    if (handle == NULL || registerData == NULL)
       return false;
 
-   int chipDataLength = dataLength + 2;
-   int totalLength = 4 + handle->chainLength * chipDataLength;
+   size_t chipDataLength = dataLength + 2;
+   size_t totalLength = 4 + handle->chainLength * chipDataLength;
    uint8_t *buffer = (uint8_t*)calloc(totalLength, sizeof(uint8_t));
    
    // Prepare command
@@ -144,7 +148,7 @@ bool mgos_ltc68xx1_write_reg_same(struct mgos_ltc68xx1 *handle, uint16_t command
 
    // Multiply data for all chips
    uint8_t *copyPointer = srcPointer;
-   for(int i = handle->chainLength; i > 1; i--)
+   for(size_t i = handle->chainLength; i > 1; i--)
    {
       copyPointer = copyPointer + chipDataLength;
       memcpy(copyPointer, srcPointer, chipDataLength);
@@ -157,7 +161,11 @@ bool mgos_ltc68xx1_write_reg_same(struct mgos_ltc68xx1 *handle, uint16_t command
 
 bool mgos_ltc68xx1_write_reg_diff(struct mgos_ltc68xx1 *handle, uint16_t command, struct mgos_ltc68xx_data *data)
 {
-   if (handle == NULL || data == NULL || data->chainLength < handle->chainLength)
+   if (handle == NULL || data == NULL)
+      return false;
+
+   size_t chainLength = (data->chainLength < handle->chainLength ? data->chainLength : handle->chainLength);
+   if (chainLength <= 0)
       return false;
    
    uint8_t *buffer = data->buffer;
@@ -169,13 +177,13 @@ bool mgos_ltc68xx1_write_reg_diff(struct mgos_ltc68xx1 *handle, uint16_t command
 
    // Calculate PEC for each chunk
    uint8_t *bufferPtr = buffer + 4;
-   for(int i = handle->chainLength; i > 0; i--)
+   for(size_t i = chainLength; i > 0; i--)
    {
       add_pec(bufferPtr, data->dataLength);
       bufferPtr += (data->dataLength + 2);
    }
 
-   return write_data(handle, buffer, 4 + handle->chainLength * (data->dataLength + 2));
+   return write_data(handle, buffer, 4 + chainLength * (data->dataLength + 2));
 }
 
 bool write_data(struct mgos_ltc68xx1 *handle, void *buffer, size_t length)

@@ -16,6 +16,8 @@ config_schema:
 
 libs:
 - origin: https://github.com/mongoose-os-libs/spi
+- origin: https://github.com/Dietatko/mjs-array
+#- name: mjs-array
   
 tags:
 - c
